@@ -1,19 +1,25 @@
 import pandas as pd
 from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
-
-pd.set_option('display.max_columns', 20, 'display.width', 120)
+from geopy.distance import distance
+pd.set_option('display.max_columns', 100, 'display.width', 130, 'display.max_colwidth', 30)
 
 # get location from geocoders
 geo_locator = Nominatim(user_agent='my app', timeout=5)
 
-# Import Customer data
-customer = pd.read_excel(r'D:\Haier\01_Project\Service Center Analysis\customer_request.xlsx')
-customer.columns = ['first_name', 'last_name', 'state', 'locality', 'city', 'zip', 'address', 'service_type']
-customer = customer[customer['state'] == 'DELHI']  # filter DELHI only
-
 # Create geocode function with rate limiter
 geocode = RateLimiter(geo_locator.geocode, min_delay_seconds=1, max_retries=4)
+
+# Import service center data
+center = pd.read_csv('dataset/service_center.csv', encoding='utf-8')
+center['center_coordinate'] = center[['latitude', 'longitude']].apply(tuple, axis=1)
+
+# Import Customer data
+customer = pd.read_excel(r'D:\Haier\01_Project\India Service Center Analysis\customer_request.xlsx')
+customer.columns = ['first_name', 'last_name', 'state', 'locality', 'city', 'zip', 'address', 'service_type', 'center', 'SR', 'date']
+customer = customer[customer['state'] == 'DELHI']  # filter DELHI only
+customer.drop_duplicates(subset=['first_name', 'last_name', 'locality', 'address', 'service_type', 'SR'], inplace=True)
+customer = customer[customer.service_type == 'in home service']
 
 # Get location from [address] column
 customer['location'] = ''
@@ -48,5 +54,15 @@ Lat_low_limit = customer.latitude.quantile(q=0.01)
 customer = customer[(customer.longitude < Long_up_limit) & (customer.longitude > Long_low_limit)
                     & (customer.latitude < Lat_up_limit) & (customer.latitude > Lat_low_limit)]
 
+# Compute distance from customer coordinate to center coordinate
+customer['center_coordinate'] = customer[['center']].merge(center[['name', 'center_coordinate']], left_on='center', right_on='name', how='left').center_coordinate
+def calculate_distance(data):
+    dist = distance(data.coordinate, data.center_coordinate).km
+    return dist
+
+customer['distance'] = customer.apply(calculate_distance, axis=1)
+
 # Output customer data with coordinate
-customer.to_csv('customer.csv', encoding='utf-8')
+customer.to_csv('customer.csv', encoding='utf-8', index=None)
+
+
